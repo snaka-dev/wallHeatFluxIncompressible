@@ -61,9 +61,10 @@ int main(int argc, char *argv[])
 {
     timeSelector::addOptions();
     #include "setRootCase.H"
-#   include "createTime.H"
+    #include "createTime.H"
     instantList timeDirs = timeSelector::select0(runTime, args);
-#   include "createMesh.H"
+    //#include "createMesh.H"
+    #include "createNamedMesh.H"
 
     forAll(timeDirs, timeI)
     {
@@ -71,78 +72,52 @@ int main(int argc, char *argv[])
         Info<< "Time = " << runTime.timeName() << endl;
         mesh.readUpdate();
 
-#       include "createFields.H"
-#       include "readTransportProperties.H"
-
-         // update the turbulence fields
-        turbulence->read();
-
-        if (!(IOobject("alphat", runTime.timeName(), mesh).headerOk()))
-        {
-            Info<< "\nCalculating turbulent heat conductivity " << endl;
-            alphat = turbulence->nut()/Prt;
-            alphat.correctBoundaryConditions();
-        }
-        else
-        {
-            Info<< "\nRead turbulent heat conductivity alphat" << endl;
-        }
-
-        if (!(IOobject("alphaEff", runTime.timeName(), mesh).headerOk()))
-        {
-            Info<< "\nCalculating effective heat conductivity " << endl;
-            alphaEff=turbulence->nu()/Pr+alphat;
-        }
-        else
-        {
-            Info<< "\nRead effective heat conductivity alphaEff" << endl;
-        }
+        #include "createFields.H"
+        #include "readTransportProperties.H"
 
         gradT=fvc::snGrad(T);
 
-        surfaceScalarField heatFlux =fvc::interpolate(alphaEff*Cp0*rho0)*gradT;
+        surfaceScalarField heatFlux
+        (
+            fvc::interpolate
+            (
+                (
+                    turbulence.valid()
+                  ? turbulence->nu()/Pr+turbulence->nut()/Prt //turbulence->alphaEff()()
+                  : turbulence->nu()/Pr   //thermo->alpha()
+                )
+            )*Cp0*rho0*gradT 
+        );
 
-        const surfaceScalarField::GeometricBoundaryField& patchGradT =
-                 gradT.boundaryField();
+        const surfaceScalarField::Boundary& patchGradT =
+                gradT.boundaryField();
           
-        const surfaceScalarField::GeometricBoundaryField& patchHeatFlux =
-                 heatFlux.boundaryField();
-//
-        Info<< "\nWall heat fluxes " << endl;
+        const surfaceScalarField::Boundary& patchHeatFlux =
+                heatFlux.boundaryField();
+                 
+        const volScalarField::Boundary& patchRadHeatFlux =
+                Qr.boundaryField();
+            
+        const surfaceScalarField::Boundary& magSf =
+                mesh.magSf().boundaryField();
+
+        Info<< "\nWall heat fluxes[W] " << endl;
         forAll(patchHeatFlux, patchi)
         {
-           if (typeid(mesh.boundary()[patchi]) == typeid(wallFvPatch))
+            if (isA<wallFvPatch>(mesh.boundary()[patchi]))
             {
-                Info<< mesh.boundary()[patchi].name()
-                    << ": Total "
-                    << sum
-                       (
-                           mesh.magSf().boundaryField()[patchi]
-                          *patchHeatFlux[patchi]
-                       )
-                    << " [W] over "
-                    << sum
-                       (
-                           mesh.magSf().boundaryField()[patchi]
-                       )
-                    << " [m2] ("
-                    << sum
-                       (
-                           mesh.magSf().boundaryField()[patchi]
-                          *patchHeatFlux[patchi]
-                       )/
-                       sum 
-                       (
-                           mesh.magSf().boundaryField()[patchi]
-                       )
-                    << " [W/m2])"
-                    << endl;
-            }
-      }
-      Info<< endl;
+                scalar convFlux = gSum(magSf[patchi]*patchHeatFlux[patchi]);
+                scalar radFlux = -gSum(magSf[patchi]*patchRadHeatFlux[patchi]);
 
-      
-      volScalarField wallHeatFlux
+                Info<< mesh.boundary()[patchi].name() << endl
+                    << "    convective: " << convFlux << endl
+                    << "    radiative:  " << radFlux << endl
+                    << "    total:      " << convFlux + radFlux << endl;
+            }
+        }
+        Info<< endl;
+
+        volScalarField wallHeatFlux
         (
             IOobject
             (
@@ -154,7 +129,50 @@ int main(int argc, char *argv[])
             dimensionedScalar("wallHeatFlux", heatFlux.dimensions(), 0.0)
         );
 
-      volScalarField wallGradT
+        volScalarField::Boundary& wallHeatFluxBf =
+            wallHeatFlux.boundaryFieldRef();
+            
+        forAll(wallHeatFluxBf, patchi)
+        {
+            wallHeatFluxBf[patchi] = patchHeatFlux[patchi];
+        }
+
+        wallHeatFlux.write();
+
+        // Write the total heat-flux including the radiative contribution
+        // if available
+        if (Qr.headerOk())
+        {
+            volScalarField totalWallHeatFlux
+            (
+                IOobject
+                (
+                    "totalWallHeatFlux",
+                    runTime.timeName(),
+                    mesh
+                ),
+                mesh,
+                dimensionedScalar
+                (
+                    "totalWallHeatFlux",
+                    heatFlux.dimensions(),
+                    0.0
+                )
+            );
+
+            volScalarField::Boundary& totalWallHeatFluxBf =
+                totalWallHeatFlux.boundaryFieldRef();
+
+            forAll(totalWallHeatFluxBf, patchi)
+            {
+                totalWallHeatFluxBf[patchi] =
+                    patchHeatFlux[patchi] - patchRadHeatFlux[patchi];
+            }
+
+            totalWallHeatFlux.write();
+        }
+
+        volScalarField wallGradT
         (
             IOobject
             (
@@ -165,22 +183,18 @@ int main(int argc, char *argv[])
             mesh,
             dimensionedScalar("wallGradT", gradT.dimensions(), 0.0)
         );
-   
-      forAll(wallHeatFlux.boundaryField(), patchi)
-      {
-         wallHeatFlux.boundaryField()[patchi] = patchHeatFlux[patchi];
-      }
 
-      forAll(wallGradT.boundaryField(), patchi)
-      {
-         wallGradT.boundaryField()[patchi] = patchGradT[patchi];
-      }
+        volScalarField::Boundary& wallGradTBf =
+            wallGradT.boundaryFieldRef();
 
+        forAll(wallGradTBf, patchi)
+        {
+            wallGradTBf[patchi] = patchGradT[patchi];
+        }
 
-      wallGradT.write();
-      gradT.write();
-      wallHeatFlux.write();
-      alphaEff.write();
+        wallGradT.write();
+        gradT.write();
+        //alphaEff.write();
     }
 
     Info<< "End" << endl;

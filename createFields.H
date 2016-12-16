@@ -1,17 +1,3 @@
-//    Info << "Reading field p\n" << endl;
-//    volScalarField p
-//    (
-//        IOobject
-//        (
-//            "p",
-//            runTime.timeName(),
-//            mesh,
-//            IOobject::READ_IF_PRESENT,
-//            IOobject::AUTO_WRITE
-//        ),
-//        mesh
-//    );
-
     Info<< "Reading field T\n" << endl;
     volScalarField T
     (
@@ -25,7 +11,6 @@
         ),
         mesh
     );
-
 
     Info << "Reading field Q\n" << endl;
     volScalarField Q
@@ -56,38 +41,6 @@
         mesh
     );
 
-
-    Info << "Creating field alphaEff\n" << endl;
-    volScalarField alphaEff
-    (
-        IOobject
-        (
-            "alphaEff",
-            runTime.timeName(),
-            mesh,
-            IOobject::READ_IF_PRESENT,
-            IOobject::AUTO_WRITE
-        ),
-        mesh,
-        dimensionedScalar("alphaEff", dimLength*dimLength/dimTime,0)
-    );
-
-    Info << "Creating field alphat\n" << endl;
-    volScalarField alphat
-    (
-        IOobject
-        (
-            "alphat",
-            runTime.timeName(),
-            mesh,
-            IOobject::READ_IF_PRESENT,
-            IOobject::AUTO_WRITE
-        ),
-        mesh,
-        dimensionedScalar("alphat", dimLength*dimLength/dimTime,0)
-    );
-
-
     surfaceScalarField gradT
     (
         IOobject
@@ -102,8 +55,7 @@
         dimensionedScalar("gradT", dimTemperature/dimLength,scalar(0))
     );
 
-
-#   include "createPhi.H"
+    #   include "createPhi.H"
 
 //    label pRefCell = 0;
 //    scalar pRefValue = 0.0;
@@ -116,10 +68,19 @@
         incompressible::New<incompressible::RASModel>(U, phi, laminarTransport)
     );
 
-
-    //autoPtr<incompressible::turbulenceModel> turbulence
-    //(
-    //    incompressible::turbulenceModel::New(U, phi, laminarTransport)
-    //);
-
     turbulence->read();
+
+    // Read radiative heat-flux if available
+    volScalarField Qr
+    (
+        IOobject
+        (
+            "Qr",
+            runTime.timeName(),
+            mesh,
+            IOobject::READ_IF_PRESENT,
+            IOobject::NO_WRITE
+        ),
+        mesh,
+        dimensionedScalar("Qr", dimMass/pow3(dimTime), 0.0)
+    );
