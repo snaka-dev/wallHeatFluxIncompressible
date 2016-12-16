@@ -51,7 +51,8 @@ Description
 #include "fvCFD.H"
 // modified from  wallHeatFlux
 #include "singlePhaseTransportModel.H"
-#include "turbulenceModel.H"
+//#include "turbulenceModel.H"
+#include "turbulentTransportModel.H"
 #include "wallFvPatch.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
