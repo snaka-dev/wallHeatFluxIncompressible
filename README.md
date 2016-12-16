@@ -1,3 +1,7 @@
+Original repository
+
+https://github.com/wyldckat/wallHeatFluxIncompressible
+
 wallHeatFluxIncompressible
 ==========================
 
